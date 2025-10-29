@@ -1,12 +1,112 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
-import { Habit } from './types';
-import { LogoIcon, PlusCircleIcon, MinusCircleIcon, LogoutIcon } from './components/Icons';
+import { Habit, Profile } from './types';
+import { LogoIcon, PlusCircleIcon, MinusCircleIcon, LogoutIcon, UserCircleIcon, SpinnerIcon } from './components/Icons';
 import { Auth } from './components/Auth';
 import * as dbService from './services/dbService';
 import { supabase } from './services/supabase';
 import { LandingPage } from './components/LandingPage';
+import { ProfileSetup } from './components/ProfileSetup';
+
+const ProfileModal: React.FC<{
+    profile: Profile;
+    session: Session;
+    onClose: () => void;
+    onProfileUpdate: (updatedProfile: Profile) => void;
+}> = ({ profile, session, onClose, onProfileUpdate }) => {
+    const [name, setName] = useState(profile.name);
+    const [age, setAge] = useState(String(profile.age));
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        const ageNumber = parseInt(age, 10);
+        if (!name.trim()) {
+            setError("Name cannot be empty.");
+            return;
+        }
+        if (isNaN(ageNumber) || ageNumber <= 0) {
+            setError("Please enter a valid age.");
+            return;
+        }
+        
+        if (name === profile.name && ageNumber === profile.age) {
+            onClose();
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const updatedProfile = await dbService.updateProfile({ name, age: ageNumber });
+            onProfileUpdate(updatedProfile);
+            onClose();
+        } catch (e: any) {
+            setError(e.message || "Failed to save profile.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-brand-black/50 flex items-center justify-center z-50" onClick={onClose}>
+            <div className="bg-brand-white rounded-lg shadow-xl p-8 w-full max-w-md" onClick={e => e.stopPropagation()}>
+                <h3 className="text-2xl font-bold text-brand-navy mb-4">Edit Profile</h3>
+                <form onSubmit={handleSave}>
+                    <div className="space-y-4 text-brand-navy">
+                        <div>
+                            <label htmlFor="profile-name" className="block text-sm font-medium text-brand-navy">Name</label>
+                            <input
+                                id="profile-name"
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="mt-1 w-full px-4 py-2 border rounded-md bg-brand-white border-brand-grey/50 focus:ring-brand-burgundy focus:border-brand-burgundy"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="profile-age" className="block text-sm font-medium text-brand-navy">Age</label>
+                            <input
+                                id="profile-age"
+                                type="number"
+                                value={age}
+                                onChange={(e) => setAge(e.target.value)}
+                                className="mt-1 w-full px-4 py-2 border rounded-md bg-brand-white border-brand-grey/50 focus:ring-brand-burgundy focus:border-brand-burgundy"
+                                required
+                            />
+                        </div>
+                        <div>
+                             <label className="block text-sm font-medium text-brand-navy">Email</label>
+                             <p className="mt-1 text-brand-grey">{session.user.email}</p>
+                        </div>
+                    </div>
+                     {error && <p className="text-red-500 text-sm text-center mt-4">{error}</p>}
+                    <div className="mt-6 flex items-center justify-end space-x-4">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-4 py-2 font-bold text-brand-navy bg-transparent rounded-md hover:bg-brand-grey/20 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isSaving}
+                            className="px-4 py-2 h-10 w-32 font-bold text-white bg-brand-navy rounded-md hover:bg-brand-burgundy transition-colors disabled:opacity-50 flex items-center justify-center"
+                        >
+                             {isSaving ? <SpinnerIcon className="w-6 h-6" /> : 'Save Changes'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 
 const TextAreaSection: React.FC<{title: string, value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void, onBlur: () => void}> = ({ title, value, onChange, onBlur }) => (
     <div className="mt-6">
@@ -224,8 +324,10 @@ const getMonthKey = (date: Date): string => `${date.getFullYear()}-${String(date
 
 export default function App() {
     const [session, setSession] = useState<Session | null>(null);
+    const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [showAuth, setShowAuth] = useState(false);
+    const [showProfile, setShowProfile] = useState(false);
     const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
     
     // State for the current month's data
@@ -233,14 +335,34 @@ export default function App() {
     const [habitNotes, setHabitNotes] = useState('');
     const [monthlyReflection, setMonthlyReflection] = useState('');
 
-    useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            setLoading(false);
-        });
+    const loadProfile = async () => {
+        try {
+            const userProfile = await dbService.getProfile();
+            setProfile(userProfile);
+        } catch (error) {
+            console.error("Failed to fetch profile:", error);
+        }
+    };
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    useEffect(() => {
+        const init = async () => {
+            setLoading(true);
+            const { data: { session } } = await supabase.auth.getSession();
             setSession(session);
+            if (session) {
+                await loadProfile();
+            }
+            setLoading(false);
+        };
+        init();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            setSession(session);
+            if (session) {
+                await loadProfile();
+            } else {
+                setProfile(null);
+            }
             if (!session) {
                 setShowAuth(false);
             }
@@ -250,7 +372,7 @@ export default function App() {
     }, []);
 
     const fetchDataForMonth = useCallback(async (date: Date) => {
-        if (!session) return;
+        if (!session || !profile) return;
         setLoading(true);
         try {
             const monthKey = getMonthKey(date);
@@ -263,7 +385,7 @@ export default function App() {
         } finally {
             setLoading(false);
         }
-    }, [session]);
+    }, [session, profile]);
     
     useEffect(() => {
         fetchDataForMonth(currentMonthDate);
@@ -279,6 +401,16 @@ export default function App() {
             setHabits(originalHabits);
         }
     };
+    
+    const handleProfileSetupComplete = async () => {
+        setLoading(true);
+        await loadProfile();
+        setLoading(false);
+    }
+
+    const handleProfileUpdate = (updatedProfile: Profile) => {
+        setProfile(updatedProfile);
+    };
 
     const handleSignOut = async () => {
         await supabase.auth.signOut();
@@ -292,16 +424,26 @@ export default function App() {
         return showAuth ? <Auth onBack={() => setShowAuth(false)} /> : <LandingPage onGetStarted={() => setShowAuth(true)} />;
     }
 
+    if (!profile) {
+        return <ProfileSetup onProfileSetupComplete={handleProfileSetupComplete} />;
+    }
+
     return (
         <div className="flex flex-col h-screen font-sans bg-brand-beige">
+             {showProfile && profile && <ProfileModal profile={profile} session={session} onClose={() => setShowProfile(false)} onProfileUpdate={handleProfileUpdate} />}
              <header className="p-4 bg-brand-navy text-brand-beige flex items-center justify-between shadow-lg z-10">
                 <div className="flex items-center">
                     <LogoIcon className="w-8 h-8" />
                     <h1 className="ml-3 text-2xl font-bold tracking-wide">Aura</h1>
                 </div>
-                <button onClick={handleSignOut} className="p-2 hover:bg-brand-burgundy rounded-full transition-colors" aria-label="Sign out">
-                    <LogoutIcon className="w-6 h-6" />
-                </button>
+                 <div className="flex items-center space-x-2">
+                    <button onClick={() => setShowProfile(true)} className="p-2 hover:bg-brand-burgundy rounded-full transition-colors" aria-label="View profile">
+                        <UserCircleIcon className="w-6 h-6" />
+                    </button>
+                    <button onClick={handleSignOut} className="p-2 hover:bg-brand-burgundy rounded-full transition-colors" aria-label="Sign out">
+                        <LogoutIcon className="w-6 h-6" />
+                    </button>
+                </div>
             </header>
             <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-8">
                  <HabitTracker 

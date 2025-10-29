@@ -5,3 +5,9 @@ export interface Habit {
   // YYYY-MM-DD: boolean
   completions: Record<string, boolean>;
 }
+
+export interface Profile {
+  id: string;
+  name: string;
+  age: number;
+}

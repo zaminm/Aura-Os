@@ -1,5 +1,37 @@
 import { supabase } from './supabase';
-import { Habit } from '../types';
+import { Habit, Profile } from '../types';
+
+// Profile Functions
+export const getProfile = async (): Promise<Profile | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, age')
+        .eq('id', session.user.id)
+        .single();
+    
+    if (error && error.code !== 'PGRST116') throw error; // Ignore "no rows found"
+    return data;
+};
+
+export const updateProfile = async (profileData: { name: string; age: number }): Promise<Profile> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not authenticated");
+    
+    const { data, error } = await supabase
+        .from('profiles')
+        .upsert({ id: session.user.id, ...profileData }, { onConflict: 'id' })
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+
+// Habit Tracker Functions
 
 // Fetch all data for a specific month for the current user
 export const getDataForMonth = async (monthKey: string) => {
