@@ -58,14 +58,13 @@ export const processUserCommand = async (
     prompt: string,
     habits: Habit[],
     habitNotes: string,
-    monthlyReflection: string,
-    apiKey: string
+    monthlyReflection: string
 ): Promise<{ responseText: string; functionCall?: any }> => {
-    if (!apiKey) {
+    if (!process.env.API_KEY) {
         return { responseText: "API Key not configured. Please set your API key." };
     }
     
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     try {
         const fullContextPrompt = `

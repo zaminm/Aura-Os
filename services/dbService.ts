@@ -1,69 +1,118 @@
-
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import { supabase } from './supabase';
 import { Habit } from '../types';
 
-const DB_NAME = 'aura-db';
-const DB_VERSION = 1;
-const MONTHLY_HABITS_STORE = 'monthlyHabits';
-const APP_STATE_STORE = 'appState';
+// Fetch all data for a specific month for the current user
+export const getDataForMonth = async (monthKey: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not authenticated");
+    const userId = session.user.id;
 
-interface AuraDB extends DBSchema {
-  [MONTHLY_HABITS_STORE]: {
-    key: string; // monthKey e.g. "2024-09"
-    value: Habit[];
-  };
-  [APP_STATE_STORE]: {
-    key: string; // 'habit-notes' or 'monthly-reflection'
-    value: string;
-  };
-}
+    const { data: habits, error: habitsError } = await supabase
+        .from('habits')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('month_key', monthKey);
 
-let dbPromise: Promise<IDBPDatabase<AuraDB>>;
+    const { data: note, error: noteError } = await supabase
+        .from('notes')
+        .select('content')
+        .eq('user_id', userId)
+        .eq('month_key', monthKey)
+        .single();
+    
+    const { data: reflection, error: reflectionError } = await supabase
+        .from('reflections')
+        .select('content')
+        .eq('user_id', userId)
+        .eq('month_key', monthKey)
+        .single();
 
-const initDB = () => {
-  if (!dbPromise) {
-    dbPromise = openDB<AuraDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(MONTHLY_HABITS_STORE)) {
-          db.createObjectStore(MONTHLY_HABITS_STORE);
-        }
-        if (!db.objectStoreNames.contains(APP_STATE_STORE)) {
-          db.createObjectStore(APP_STATE_STORE);
-        }
-      },
-    });
-  }
-  return dbPromise;
+    if (habitsError) throw habitsError;
+    if (noteError && noteError.code !== 'PGRST116') throw noteError; // Ignore "no rows found"
+    if (reflectionError && reflectionError.code !== 'PGRST116') throw reflectionError;
+
+    return {
+        habits: habits.map(h => ({ ...h, id: h.habit_id })) || [], // map habit_id to id
+        note: note?.content || '',
+        reflection: reflection?.content || ''
+    };
 };
 
-// --- Habits ---
-export const getAllHabits = async (): Promise<Record<string, Habit[]>> => {
-  const db = await initDB();
-  const tx = db.transaction(MONTHLY_HABITS_STORE, 'readonly');
-  const store = tx.objectStore(MONTHLY_HABITS_STORE);
-  const keys = await store.getAllKeys();
-  const values = await store.getAll();
-  await tx.done;
 
-  const habits: Record<string, Habit[]> = {};
-  keys.forEach((key, index) => {
-    habits[String(key)] = values[index];
-  });
-  return habits;
+// Add a new habit
+export const addHabit = async (monthKey: string, habit: Habit) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not authenticated");
+
+    const { data, error } = await supabase
+        .from('habits')
+        .insert({
+            user_id: session.user.id,
+            month_key: monthKey,
+            habit_id: habit.id,
+            name: habit.name,
+            completions: habit.completions
+        })
+        .select()
+        .single();
+    
+    if (error) throw error;
+    return { ...data, id: data.habit_id };
 };
 
-export const saveHabitsForMonth = async (monthKey: string, habits: Habit[]): Promise<void> => {
-  const db = await initDB();
-  await db.put(MONTHLY_HABITS_STORE, habits, monthKey);
+// Update an existing habit
+export const updateHabit = async (habitId: number, updates: Partial<Habit>) => {
+    const { data, error } = await supabase
+        .from('habits')
+        .update({ name: updates.name, completions: updates.completions })
+        .eq('habit_id', habitId)
+        .select()
+        .single();
+    
+    if (error) throw error;
+    return { ...data, id: data.habit_id };
 };
 
-// --- App State (Notes, Reflection) ---
-export const getAppState = async (key: string): Promise<string> => {
-  const db = await initDB();
-  return (await db.get(APP_STATE_STORE, key)) || '';
+
+// Delete a habit
+export const deleteHabit = async (habitId: number) => {
+    const { error } = await supabase
+        .from('habits')
+        .delete()
+        .eq('habit_id', habitId);
+
+    if (error) throw error;
 };
 
-export const saveAppState = async (key: string, value: string): Promise<void> => {
-  const db = await initDB();
-  await db.put(APP_STATE_STORE, value, key);
+
+// Save (upsert) notes for the month
+export const saveNote = async (monthKey: string, content: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not authenticated");
+    
+    const { error } = await supabase
+        .from('notes')
+        .upsert({
+            user_id: session.user.id,
+            month_key: monthKey,
+            content: content
+        }, { onConflict: 'user_id, month_key' });
+
+    if (error) throw error;
+};
+
+// Save (upsert) reflection for the month
+export const saveReflection = async (monthKey: string, content: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not authenticated");
+
+    const { error } = await supabase
+        .from('reflections')
+        .upsert({
+            user_id: session.user.id,
+            month_key: monthKey,
+            content: content
+        }, { onConflict: 'user_id, month_key' });
+    
+    if (error) throw error;
 };
