@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { LogoIcon, SpinnerIcon } from './Icons';
 
-export const Auth = () => {
+export const Auth: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -46,8 +47,19 @@ export const Auth = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-brand-beige">
-      <div className="w-full max-w-sm p-8 space-y-6 bg-brand-white rounded-lg shadow-lg border border-brand-grey/30">
-        <div className="flex flex-col items-center">
+      <div className="w-full max-w-sm p-8 space-y-6 bg-brand-white rounded-lg shadow-lg border border-brand-grey/30 relative">
+        {onBack && (
+            <button 
+                onClick={onBack} 
+                className="absolute top-4 left-4 text-brand-grey hover:text-brand-navy transition-colors"
+                aria-label="Back to home"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+            </button>
+        )}
+        <div className="flex flex-col items-center pt-6">
           <LogoIcon className="w-12 h-12 text-brand-navy" />
           <h1 className="mt-2 text-3xl font-bold tracking-wide text-brand-navy">Aura</h1>
           <p className="text-brand-grey">Your personal life OS</p>

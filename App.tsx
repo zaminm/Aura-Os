@@ -6,6 +6,7 @@ import { LogoIcon, PlusCircleIcon, MinusCircleIcon, LogoutIcon } from './compone
 import { Auth } from './components/Auth';
 import * as dbService from './services/dbService';
 import { supabase } from './services/supabase';
+import { LandingPage } from './components/LandingPage';
 
 const TextAreaSection: React.FC<{title: string, value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void, onBlur: () => void}> = ({ title, value, onChange, onBlur }) => (
     <div className="mt-6">
@@ -224,6 +225,7 @@ const getMonthKey = (date: Date): string => `${date.getFullYear()}-${String(date
 export default function App() {
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
+    const [showAuth, setShowAuth] = useState(false);
     const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
     
     // State for the current month's data
@@ -239,6 +241,9 @@ export default function App() {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
+            if (!session) {
+                setShowAuth(false);
+            }
         });
 
         return () => subscription.unsubscribe();
@@ -284,7 +289,7 @@ export default function App() {
     }
 
     if (!session) {
-        return <Auth />;
+        return showAuth ? <Auth onBack={() => setShowAuth(false)} /> : <LandingPage onGetStarted={() => setShowAuth(true)} />;
     }
 
     return (
