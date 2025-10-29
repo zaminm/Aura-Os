@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { Habit } from './types';
 import { LogoIcon, PlusCircleIcon, MinusCircleIcon, LogoutIcon } from './components/Icons';
@@ -51,9 +51,32 @@ const HabitTracker: React.FC<{
     const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
     const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUNE", "JULY", "AUG", "SEPT", "OCT", "NOV", "DEC"];
 
-    const handleMonthNav = (monthIndex: number) => {
-        onMonthChange(new Date(year, monthIndex, 1));
-    };
+    const monthList = useMemo(() => {
+        const list: Date[] = [];
+        const today = new Date();
+        const startYear = today.getFullYear() - 5;
+        const endYear = today.getFullYear() + 5;
+        for (let y = startYear; y <= endYear; y++) {
+            for (let m = 0; m < 12; m++) {
+                list.push(new Date(y, m, 1));
+            }
+        }
+        return list;
+    }, []);
+    const monthContainerRef = useRef<HTMLDivElement>(null);
+    const activeMonthRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (activeMonthRef.current && monthContainerRef.current) {
+            const container = monthContainerRef.current;
+            const activeEl = activeMonthRef.current;
+            const scrollLeft = activeEl.offsetLeft - (container.offsetWidth / 2) + (activeEl.offsetWidth / 2);
+            container.scrollTo({
+                left: scrollLeft,
+                behavior: 'smooth'
+            });
+        }
+    }, [currentMonthDate]);
     
     const handleAddHabit = async () => {
         const newHabit: Habit = { id: Date.now(), name: "", completions: {} };
@@ -99,16 +122,35 @@ const HabitTracker: React.FC<{
             <h3 className="text-xl sm:text-2xl font-bold text-brand-navy text-center tracking-widest mb-4">HABIT TRACKER</h3>
             
             <div className="border-y-2 border-brand-black py-2 mb-4 flex items-center">
-                <div className="flex-1 flex justify-center items-center space-x-2 sm:space-x-4 overflow-x-auto pr-4">
-                    {monthNames.map((name, index) => (
-                        <button 
-                            key={name}
-                            onClick={() => handleMonthNav(index)}
-                             className={`px-3 py-1 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors whitespace-nowrap ${index === month ? 'text-brand-navy border-b-2 border-brand-navy' : 'text-brand-navy/60 hover:text-brand-navy'}`}
-                        >
-                            {name}
-                        </button>
-                    ))}
+                <div ref={monthContainerRef} className="flex-1 flex items-center space-x-1 sm:space-x-2 overflow-x-auto scrollbar-hide px-4">
+                    {monthList.map((dateItem, idx) => {
+                        const itemMonth = dateItem.getMonth();
+                        const itemYear = dateItem.getFullYear();
+                        const isSelected = itemMonth === month && itemYear === year;
+                        
+                        const prevDate = idx > 0 ? monthList[idx - 1] : null;
+                        const showYearSeparator = prevDate && prevDate.getFullYear() !== itemYear;
+
+                        let label = monthNames[itemMonth];
+                        if (itemMonth === 0) {
+                            label = `${label} '${itemYear.toString().slice(-2)}`;
+                        }
+
+                        return (
+                            <React.Fragment key={`${itemYear}-${itemMonth}`}>
+                                {showYearSeparator && (
+                                    <div className="border-l-2 border-brand-grey/30 h-4 self-center mx-1 sm:mx-2"></div>
+                                )}
+                                <button
+                                    ref={isSelected ? activeMonthRef : null}
+                                    onClick={() => onMonthChange(dateItem)}
+                                    className={`py-1 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors whitespace-nowrap ${isSelected ? 'text-brand-navy border-b-2 border-brand-navy px-3' : 'text-brand-navy/60 hover:text-brand-navy px-3'}`}
+                                >
+                                    {label}
+                                </button>
+                            </React.Fragment>
+                        );
+                    })}
                 </div>
             </div>
 
