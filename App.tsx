@@ -2,10 +2,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { Habit } from './types';
-import { LogoIcon, PlusCircleIcon, MinusCircleIcon, LogoutIcon, PaperAirplaneIcon } from './components/Icons';
+import { LogoIcon, PlusCircleIcon, MinusCircleIcon, LogoutIcon } from './components/Icons';
 import { Auth } from './components/Auth';
 import * as dbService from './services/dbService';
-import { processUserCommand } from './services/geminiService';
 import { supabase } from './services/supabase';
 
 const TextAreaSection: React.FC<{title: string, value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void, onBlur: () => void}> = ({ title, value, onChange, onBlur }) => (
@@ -179,64 +178,10 @@ const HabitTracker: React.FC<{
 };
 
 const getMonthKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-const getYYYYMMDD = (date: Date = new Date()): string => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
-
-const CommandBar: React.FC<{
-    onCommandSubmit: (command: string) => void;
-    isProcessing: boolean;
-}> = ({ onCommandSubmit, isProcessing }) => {
-    const [command, setCommand] = useState('');
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!command.trim() || isProcessing) return;
-        onCommandSubmit(command);
-        setCommand('');
-    };
-
-    return (
-        <div className="fixed bottom-0 left-0 right-0 bg-brand-white/80 backdrop-blur-sm border-t border-brand-grey/30 p-2 sm:p-4 z-20">
-            <div className="max-w-4xl mx-auto">
-                <form onSubmit={handleSubmit} className="flex items-center space-x-2">
-                    <input
-                        type="text"
-                        value={command}
-                        onChange={(e) => setCommand(e.target.value)}
-                        placeholder="Tell Aura what to do..."
-                        disabled={isProcessing}
-                        className="w-full px-4 py-2 border rounded-full bg-brand-white border-brand-grey/50 focus:ring-brand-burgundy focus:border-brand-burgundy transition-all"
-                        aria-label="Command input"
-                    />
-                    <button
-                        type="submit"
-                        disabled={isProcessing || !command.trim()}
-                        className="p-3 rounded-full bg-brand-navy text-white hover:bg-brand-burgundy disabled:bg-brand-grey transition-colors flex-shrink-0"
-                        aria-label="Submit command"
-                    >
-                        {isProcessing ? (
-                             <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        ) : (
-                            <PaperAirplaneIcon className="w-5 h-5" />
-                        )}
-                    </button>
-                </form>
-            </div>
-        </div>
-    );
-};
 
 export default function App() {
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isProcessingCommand, setIsProcessingCommand] = useState(false);
     const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
     
     // State for the current month's data
@@ -288,57 +233,6 @@ export default function App() {
         }
     };
 
-    const handleCommandSubmit = async (command: string) => {
-        setIsProcessingCommand(true);
-        const { responseText, functionCall } = await processUserCommand(
-            command,
-            habits,
-            habitNotes,
-            monthlyReflection
-        );
-
-        if (functionCall) {
-            const monthKey = getMonthKey(currentMonthDate);
-            const { name, args } = functionCall;
-            switch(name) {
-                case 'add_habit': {
-                    const newHabit: Habit = { id: Date.now(), name: args.name, completions: {} };
-                    setHabits(prev => [...prev, newHabit]);
-                    await dbService.addHabit(monthKey, newHabit);
-                    break;
-                }
-                case 'log_habit_completion': {
-                    const habitToLog = habits.find(h => h.name.toLowerCase() === args.name.toLowerCase());
-                    if (habitToLog) {
-                        const dateStr = args.date || getYYYYMMDD(new Date());
-                        const newCompletions = { ...habitToLog.completions, [dateStr]: true };
-                        await handleUpdateHabit(habitToLog.id, { completions: newCompletions });
-                    } else {
-                        alert(`Habit "${args.name}" not found.`);
-                    }
-                    break;
-                }
-                case 'add_habit_note': {
-                    const newNotes = habitNotes ? `${habitNotes}\n- ${args.note}` : `- ${args.note}`;
-                    setHabitNotes(newNotes);
-                    await dbService.saveNote(monthKey, newNotes);
-                    break;
-                }
-                case 'set_monthly_reflection': {
-                    setMonthlyReflection(args.reflection);
-                    await dbService.saveReflection(monthKey, args.reflection);
-                    break;
-                }
-                default:
-                    console.warn(`Unknown function call: ${name}`);
-            }
-        } else {
-           alert(responseText);
-        }
-
-        setIsProcessingCommand(false);
-    };
-
     const handleSignOut = async () => {
         await supabase.auth.signOut();
     };
@@ -362,7 +256,7 @@ export default function App() {
                     <LogoutIcon className="w-6 h-6" />
                 </button>
             </header>
-            <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24">
+            <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-8">
                  <HabitTracker 
                       habits={habits}
                       setHabits={setHabits}
@@ -375,7 +269,6 @@ export default function App() {
                       handleUpdateHabit={handleUpdateHabit}
                     />
             </main>
-            <CommandBar onCommandSubmit={handleCommandSubmit} isProcessing={isProcessingCommand} />
         </div>
     );
 }

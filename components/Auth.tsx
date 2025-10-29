@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
-import { LogoIcon } from './Icons';
+import { LogoIcon, SpinnerIcon } from './Icons';
 
 export const Auth = () => {
   const [loading, setLoading] = useState(false);
@@ -8,11 +8,17 @@ export const Auth = () => {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const resetState = () => {
+      setError(null);
+      setMessage(null);
+  };
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    setError(null);
+    resetState();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setError(error.message);
     setLoading(false);
@@ -21,11 +27,21 @@ export const Auth = () => {
   const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    setError(null);
+    resetState();
     const { error } = await supabase.auth.signUp({ email, password });
-    if (error) setError(error.message);
-    else alert('Check your email for the login link!');
+    if (error) {
+      setError(error.message);
+    } else {
+      setMessage('Success! Check your email for the confirmation link.');
+      setEmail('');
+      setPassword('');
+    }
     setLoading(false);
+  };
+
+  const handleTabChange = (signUp: boolean) => {
+      setIsSignUp(signUp);
+      resetState();
   };
 
   return (
@@ -39,13 +55,13 @@ export const Auth = () => {
 
         <div className="flex border-b border-brand-grey/30">
             <button 
-                onClick={() => setIsSignUp(false)}
+                onClick={() => handleTabChange(false)}
                 className={`w-1/2 py-2 text-center font-semibold transition-colors ${!isSignUp ? 'text-brand-burgundy border-b-2 border-brand-burgundy' : 'text-brand-grey hover:text-brand-navy'}`}
             >
                 Sign In
             </button>
             <button 
-                onClick={() => setIsSignUp(true)}
+                onClick={() => handleTabChange(true)}
                 className={`w-1/2 py-2 text-center font-semibold transition-colors ${isSignUp ? 'text-brand-burgundy border-b-2 border-brand-burgundy' : 'text-brand-grey hover:text-brand-navy'}`}
             >
                 Sign Up
@@ -80,12 +96,13 @@ export const Auth = () => {
           <div>
             <button
               type="submit"
-              className="w-full px-4 py-2 font-bold text-white bg-brand-navy rounded-md hover:bg-brand-burgundy focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-burgundy disabled:opacity-50 transition-colors"
+              className="w-full h-10 px-4 py-2 font-bold text-white bg-brand-navy rounded-md hover:bg-brand-burgundy focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-burgundy disabled:opacity-50 transition-colors flex items-center justify-center"
               disabled={loading}
             >
-              {loading ? 'Loading...' : (isSignUp ? 'Sign Up' : 'Sign In')}
+              {loading ? <SpinnerIcon className="w-6 h-6" /> : (isSignUp ? 'Sign Up' : 'Sign In')}
             </button>
           </div>
+          {message && <p className="text-green-600 text-sm text-center">{message}</p>}
           {error && <p className="text-red-500 text-sm text-center">{error}</p>}
         </form>
       </div>
