@@ -1,7 +1,7 @@
 // Fix: Corrected React import syntax to properly import hooks.
 import React, { useState, useEffect } from 'react';
 import { Habit } from './types';
-import { LogoIcon, PlusCircleIcon } from './components/Icons';
+import { LogoIcon, PlusCircleIcon, MinusCircleIcon } from './components/Icons';
 
 const TextAreaSection: React.FC<{title: string, value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void}> = ({ title, value, onChange }) => (
     <div className="mt-6">
@@ -20,6 +20,10 @@ const HabitTracker: React.FC<{
   habits: Habit[]; 
   onToggleHabit: (habitId: number, date: string) => void;
   onUpdateHabitName: (habitId: number, newName: string) => void;
+  onAddHabit: () => void;
+  onDeleteHabit: () => void;
+  selectedHabitId: number | null;
+  onSetSelectedHabitId: (id: number | null) => void;
   currentMonthDate: Date;
   onMonthChange: (date: Date) => void;
   habitNotes: string;
@@ -28,7 +32,8 @@ const HabitTracker: React.FC<{
   setMonthlyReflection: (reflection: string) => void;
 }> = (props) => {
     const { 
-        habits, onToggleHabit, onUpdateHabitName,
+        habits, onToggleHabit, onUpdateHabitName, onAddHabit,
+        onDeleteHabit, selectedHabitId, onSetSelectedHabitId,
         currentMonthDate, onMonthChange,
         habitNotes, setHabitNotes,
         monthlyReflection, setMonthlyReflection
@@ -69,20 +74,39 @@ const HabitTracker: React.FC<{
             </div>
 
             <div className="mt-6">
-                <h4 className="font-bold text-brand-navy tracking-wider">MONTHLY GOAL</h4>
+                 <div className="flex justify-between items-center">
+                    <h4 className="font-bold text-brand-navy tracking-wider">MONTHLY GOAL</h4>
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={onDeleteHabit} 
+                            className="text-brand-burgundy hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" 
+                            aria-label="Delete selected habit"
+                            disabled={selectedHabitId === null}
+                        >
+                            <MinusCircleIcon className="w-6 h-6" />
+                        </button>
+                        <button onClick={onAddHabit} className="text-brand-burgundy hover:opacity-80 transition-opacity" aria-label="Add new habit">
+                            <PlusCircleIcon className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
                 <div className="mt-2 p-4 border border-brand-black rounded-md space-y-3 bg-brand-white">
-                    {habits.slice(0, 3).map((habit) => (
-                        <div key={habit.id} className="flex items-center">
+                    {habits.map((habit) => (
+                        <div key={habit.id} className={`flex items-center p-1 rounded-md transition-colors ${selectedHabitId === habit.id ? 'bg-habit-pink' : 'bg-transparent'}`}>
                             <span className="mr-3 text-brand-navy font-bold text-xl">∙</span>
                             <input
                                 type="text"
                                 value={habit.name}
+                                onFocus={() => onSetSelectedHabitId(habit.id)}
                                 onChange={(e) => onUpdateHabitName(habit.id, e.target.value)}
                                 placeholder="Enter a goal to track as a habit..."
                                 className="w-full text-brand-navy bg-transparent border-0 border-b border-dashed border-brand-grey focus:ring-0 focus:border-brand-navy transition-colors placeholder-brand-grey"
                             />
                         </div>
                     ))}
+                    {habits.length === 0 && (
+                        <p className="text-brand-grey text-center">No goals yet. Add one to get started!</p>
+                    )}
                 </div>
             </div>
 
@@ -156,6 +180,7 @@ export default function App() {
     const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
     const [habitNotes, setHabitNotes] = useState('');
     const [monthlyReflection, setMonthlyReflection] = useState('');
+    const [selectedHabitId, setSelectedHabitId] = useState<number | null>(null);
 
     useEffect(() => {
         try {
@@ -194,12 +219,7 @@ export default function App() {
     const handleMonthChange = (date: Date) => {
         const monthKey = getMonthKey(date);
         if (!monthlyHabits[monthKey]) {
-            const newHabits: Habit[] = Array.from({ length: 3 }).map((_, index) => ({
-                id: Date.now() + index,
-                name: "",
-                completions: {}
-            }));
-            setMonthlyHabits(prev => ({ ...prev, [monthKey]: newHabits }));
+            setMonthlyHabits(prev => ({ ...prev, [monthKey]: [] }));
         }
         setCurrentMonthDate(date);
     };
@@ -234,7 +254,35 @@ export default function App() {
             return { ...prevMonthlyHabits, [monthKey]: updatedHabits };
         });
     };
+
+    const handleAddHabit = () => {
+        const monthKey = getMonthKey(currentMonthDate);
+        const newHabit: Habit = {
+            id: Date.now(),
+            name: "",
+            completions: {}
+        };
+        setMonthlyHabits(prev => {
+            const habitsForMonth = prev[monthKey] || [];
+            return {
+                ...prev,
+                [monthKey]: [...habitsForMonth, newHabit]
+            };
+        });
+    };
     
+    const handleDeleteHabit = () => {
+        if (selectedHabitId === null) return;
+    
+        const monthKey = getMonthKey(currentMonthDate);
+        setMonthlyHabits(prevMonthlyHabits => {
+            const habitsForMonth = prevMonthlyHabits[monthKey] || [];
+            const updatedHabits = habitsForMonth.filter(h => h.id !== selectedHabitId);
+            return { ...prevMonthlyHabits, [monthKey]: updatedHabits };
+        });
+        setSelectedHabitId(null);
+    };
+
     const currentMonthKey = getMonthKey(currentMonthDate);
     const habitsForCurrentMonth = monthlyHabits[currentMonthKey] || [];
 
@@ -249,6 +297,10 @@ export default function App() {
                       habits={habitsForCurrentMonth} 
                       onToggleHabit={handleToggleHabit} 
                       onUpdateHabitName={handleUpdateHabitName}
+                      onAddHabit={handleAddHabit}
+                      onDeleteHabit={handleDeleteHabit}
+                      selectedHabitId={selectedHabitId}
+                      onSetSelectedHabitId={setSelectedHabitId}
                       currentMonthDate={currentMonthDate}
                       onMonthChange={handleMonthChange}
                       habitNotes={habitNotes}
