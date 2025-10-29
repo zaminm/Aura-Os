@@ -341,25 +341,36 @@ export default function App() {
             setProfile(userProfile);
         } catch (error) {
             console.error("Failed to fetch profile:", error);
+            // Re-throw to be caught by callers
+            throw error;
         }
     };
 
     useEffect(() => {
         const init = async () => {
-            setLoading(true);
-            const { data: { session } } = await supabase.auth.getSession();
-            setSession(session);
-            if (session) {
-                await loadProfile();
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                setSession(session);
+                if (session) {
+                    await loadProfile();
+                }
+            } catch (error) {
+                console.error("Error during app initialization:", error);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         };
         init();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             setSession(session);
             if (session) {
-                await loadProfile();
+                try {
+                    await loadProfile();
+                } catch (error) {
+                     console.error("Error loading profile on auth state change:", error);
+                     setProfile(null);
+                }
             } else {
                 setProfile(null);
             }
