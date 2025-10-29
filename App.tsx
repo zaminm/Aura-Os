@@ -1,7 +1,9 @@
+
 // Fix: Corrected React import syntax to properly import hooks.
 import React, { useState, useEffect } from 'react';
 import { Habit } from './types';
 import { LogoIcon, PlusCircleIcon, MinusCircleIcon } from './components/Icons';
+import { getAllHabits, saveHabitsForMonth, getAppState, saveAppState } from './services/dbService';
 
 const TextAreaSection: React.FC<{title: string, value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void}> = ({ title, value, onChange }) => (
     <div className="mt-6">
@@ -183,76 +185,93 @@ export default function App() {
     const [selectedHabitId, setSelectedHabitId] = useState<number | null>(null);
 
     useEffect(() => {
-        try {
-            const storedHabits = localStorage.getItem('aura-monthly-habits');
-            const allHabits = storedHabits ? JSON.parse(storedHabits) : {};
-            
-            const currentMonthKey = getMonthKey(new Date());
-            if (!allHabits[currentMonthKey]) {
-                allHabits[currentMonthKey] = getDefaultHabits();
-            }
+        const loadData = async () => {
+            try {
+                let allHabits = await getAllHabits();
+                
+                // If DB is completely empty for habits, seed with default habits for the current month
+                if (Object.keys(allHabits).length === 0) {
+                    const currentMonthKey = getMonthKey(new Date());
+                    const defaultHabits = getDefaultHabits();
+                    allHabits[currentMonthKey] = defaultHabits;
+                    await saveHabitsForMonth(currentMonthKey, defaultHabits);
+                }
 
-            setMonthlyHabits(allHabits);
-            setHabitNotes(localStorage.getItem('aura-habit-notes') || '');
-            setMonthlyReflection(localStorage.getItem('aura-monthly-reflection') || '');
-        } catch (error) {
-            console.error("Failed to parse from localStorage", error);
-            const currentMonthKey = getMonthKey(new Date());
-            setMonthlyHabits({ [currentMonthKey]: getDefaultHabits() });
-        }
+                setMonthlyHabits(allHabits);
+                setHabitNotes(await getAppState('aura-habit-notes'));
+                setMonthlyReflection(await getAppState('aura-monthly-reflection'));
+            } catch (error) {
+                console.error("Failed to load data from IndexedDB", error);
+                const currentMonthKey = getMonthKey(new Date());
+                setMonthlyHabits({ [currentMonthKey]: getDefaultHabits() });
+            }
+        };
+        loadData();
     }, []);
     
     useEffect(() => {
-        if (Object.keys(monthlyHabits).length > 0) {
-            localStorage.setItem('aura-monthly-habits', JSON.stringify(monthlyHabits));
-        }
-    }, [monthlyHabits]);
-
-    useEffect(() => {
-        localStorage.setItem('aura-habit-notes', habitNotes);
+        // Debounce saving to avoid excessive writes on every keystroke
+        const handler = setTimeout(() => {
+            if (habitNotes !== undefined) {
+                 saveAppState('aura-habit-notes', habitNotes);
+            }
+        }, 500);
+        return () => clearTimeout(handler);
     }, [habitNotes]);
     
     useEffect(() => {
-        localStorage.setItem('aura-monthly-reflection', monthlyReflection);
+        const handler = setTimeout(() => {
+            if (monthlyReflection !== undefined) {
+                saveAppState('aura-monthly-reflection', monthlyReflection);
+            }
+        }, 500);
+        return () => clearTimeout(handler);
     }, [monthlyReflection]);
+    
+    const updateAndPersistHabitsForCurrentMonth = (newHabits: Habit[]) => {
+        const monthKey = getMonthKey(currentMonthDate);
+        setMonthlyHabits(prev => ({
+            ...prev,
+            [monthKey]: newHabits,
+        }));
+        saveHabitsForMonth(monthKey, newHabits);
+    };
 
     const handleMonthChange = (date: Date) => {
         const monthKey = getMonthKey(date);
         if (!monthlyHabits[monthKey]) {
-            setMonthlyHabits(prev => ({ ...prev, [monthKey]: [] }));
+            const newHabitsForMonth: Habit[] = [];
+            setMonthlyHabits(prev => ({ ...prev, [monthKey]: newHabitsForMonth }));
+            saveHabitsForMonth(monthKey, newHabitsForMonth);
         }
         setCurrentMonthDate(date);
     };
 
     const handleToggleHabit = (habitId: number, date: string) => {
         const monthKey = getMonthKey(currentMonthDate);
-        setMonthlyHabits(prevMonthlyHabits => {
-            const habitsForMonth = prevMonthlyHabits[monthKey] || [];
-            const updatedHabits = habitsForMonth.map(habit => {
-                if (habit.id === habitId) {
-                    const newCompletions = { ...habit.completions };
-                    if (newCompletions[date]) {
-                        delete newCompletions[date];
-                    } else {
-                        newCompletions[date] = true;
-                    }
-                    return { ...habit, completions: newCompletions };
+        const habitsForMonth = monthlyHabits[monthKey] || [];
+        const updatedHabits = habitsForMonth.map(habit => {
+            if (habit.id === habitId) {
+                const newCompletions = { ...habit.completions };
+                if (newCompletions[date]) {
+                    delete newCompletions[date];
+                } else {
+                    newCompletions[date] = true;
                 }
-                return habit;
-            });
-            return { ...prevMonthlyHabits, [monthKey]: updatedHabits };
+                return { ...habit, completions: newCompletions };
+            }
+            return habit;
         });
+        updateAndPersistHabitsForCurrentMonth(updatedHabits);
     };
 
     const handleUpdateHabitName = (habitId: number, newName: string) => {
         const monthKey = getMonthKey(currentMonthDate);
-        setMonthlyHabits(prevMonthlyHabits => {
-            const habitsForMonth = prevMonthlyHabits[monthKey] || [];
-            const updatedHabits = habitsForMonth.map(habit => 
-                habit.id === habitId ? { ...habit, name: newName } : habit
-            );
-            return { ...prevMonthlyHabits, [monthKey]: updatedHabits };
-        });
+        const habitsForMonth = monthlyHabits[monthKey] || [];
+        const updatedHabits = habitsForMonth.map(habit => 
+            habit.id === habitId ? { ...habit, name: newName } : habit
+        );
+        updateAndPersistHabitsForCurrentMonth(updatedHabits);
     };
 
     const handleAddHabit = () => {
@@ -262,24 +281,17 @@ export default function App() {
             name: "",
             completions: {}
         };
-        setMonthlyHabits(prev => {
-            const habitsForMonth = prev[monthKey] || [];
-            return {
-                ...prev,
-                [monthKey]: [...habitsForMonth, newHabit]
-            };
-        });
+        const habitsForMonth = monthlyHabits[monthKey] || [];
+        const updatedHabits = [...habitsForMonth, newHabit];
+        updateAndPersistHabitsForCurrentMonth(updatedHabits);
     };
     
     const handleDeleteHabit = () => {
         if (selectedHabitId === null) return;
-    
         const monthKey = getMonthKey(currentMonthDate);
-        setMonthlyHabits(prevMonthlyHabits => {
-            const habitsForMonth = prevMonthlyHabits[monthKey] || [];
-            const updatedHabits = habitsForMonth.filter(h => h.id !== selectedHabitId);
-            return { ...prevMonthlyHabits, [monthKey]: updatedHabits };
-        });
+        const habitsForMonth = monthlyHabits[monthKey] || [];
+        const updatedHabits = habitsForMonth.filter(h => h.id !== selectedHabitId);
+        updateAndPersistHabitsForCurrentMonth(updatedHabits);
         setSelectedHabitId(null);
     };
 
