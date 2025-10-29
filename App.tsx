@@ -1,84 +1,7 @@
-
-import React, { useState, useCallback, useEffect } from 'react';
+// Fix: Corrected React import syntax to properly import hooks.
+import React, { useState, useEffect } from 'react';
 import { Habit } from './types';
-import { LogoIcon, SendIcon, PlusCircleIcon } from './components/Icons';
-import { processUserCommand } from './services/geminiService';
-
-const ApiKeyModal: React.FC<{ onSave: (key: string) => void }> = ({ onSave }) => {
-    const [key, setKey] = useState('');
-
-    const handleSave = () => {
-        if (key.trim()) {
-            onSave(key.trim());
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 bg-brand-black/60 flex items-center justify-center z-50">
-            <div className="bg-brand-white p-6 rounded-lg shadow-2xl w-full max-w-sm">
-                <h2 className="text-xl font-bold text-brand-navy mb-4">Enter your Gemini API Key</h2>
-                <p className="text-sm text-brand-grey mb-4">
-                    To use Aura's AI features, you need a Google Gemini API key. You can get one for free from{' '}
-                    <a href="https://aistudio.google.com/keys" target="_blank" rel="noopener noreferrer" className="text-brand-burgundy underline">
-                        Google AI Studio
-                    </a>.
-                </p>
-                <input
-                    type="password"
-                    value={key}
-                    onChange={(e) => setKey(e.target.value)}
-                    placeholder="Enter your API key here"
-                    className="w-full px-3 py-2 border border-brand-black rounded-md focus:ring-2 focus:ring-brand-burgundy focus:outline-none"
-                />
-                <button
-                    onClick={handleSave}
-                    className="w-full mt-4 px-4 py-2 bg-brand-navy text-white font-bold rounded-md hover:bg-brand-navy/90 transition-colors"
-                >
-                    Save and Start
-                </button>
-            </div>
-        </div>
-    );
-};
-
-
-const AIAssistant: React.FC<{ onCommand: (cmd: string) => Promise<void>, loading: boolean, aiResponse: string }> = ({ onCommand, loading, aiResponse }) => {
-    const [input, setInput] = useState('');
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (input.trim() && !loading) {
-            onCommand(input.trim());
-            setInput('');
-        }
-    };
-
-    return (
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-brand-beige/80 backdrop-blur-sm border-t border-brand-grey/20">
-            <div className="max-w-4xl mx-auto">
-                <p className="text-center text-sm text-brand-navy mb-2 px-4 h-5 truncate">{aiResponse}</p>
-                <form onSubmit={handleSubmit}>
-                    <div className="relative">
-                        <input
-                            type="text"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            placeholder="Tell Aura what to do... e.g., 'add a new habit to meditate daily'"
-                            className="w-full pl-4 pr-12 py-3 rounded-full bg-brand-white text-brand-navy border border-brand-grey/50 focus:ring-2 focus:ring-brand-burgundy focus:outline-none shadow-md transition-shadow"
-                            disabled={loading}
-                        />
-                        <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-brand-burgundy text-white hover:bg-brand-burgundy/80 disabled:bg-brand-grey transition-colors" disabled={loading}>
-                            {loading ? 
-                              <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> :
-                              <SendIcon className="w-5 h-5" />
-                            }
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-};
+import { LogoIcon, PlusCircleIcon } from './components/Icons';
 
 const TextAreaSection: React.FC<{title: string, value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void}> = ({ title, value, onChange }) => (
     <div className="mt-6">
@@ -148,8 +71,8 @@ const HabitTracker: React.FC<{
             <div className="mt-6">
                 <h4 className="font-bold text-brand-navy tracking-wider">MONTHLY GOAL</h4>
                 <div className="mt-2 p-4 border border-brand-black rounded-md space-y-3 bg-brand-white">
-                    {habits.slice(0, 3).map((habit, index) => (
-                        <div key={habit.id || `habit-${index}`} className="flex items-center">
+                    {habits.slice(0, 3).map((habit) => (
+                        <div key={habit.id} className="flex items-center">
                             <span className="mr-3 text-brand-navy font-bold text-xl">∙</span>
                             <input
                                 type="text"
@@ -202,6 +125,9 @@ const HabitTracker: React.FC<{
     );
 };
 
+const getMonthKey = (date: Date): string => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
 
 const getDefaultHabits = (): Habit[] => {
     const today = new Date();
@@ -226,65 +152,63 @@ const getDefaultHabits = (): Habit[] => {
 };
 
 export default function App() {
-    const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('gemini-api-key'));
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    
-    const [habits, setHabits] = useState<Habit[]>([]);
+    const [monthlyHabits, setMonthlyHabits] = useState<Record<string, Habit[]>>({});
     const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
     const [habitNotes, setHabitNotes] = useState('');
     const [monthlyReflection, setMonthlyReflection] = useState('');
 
-    const [aiResponse, setAiResponse] = useState<string>("Welcome to Aura! How can I help you with your habits?");
-    const [loading, setLoading] = useState(false);
-
     useEffect(() => {
-        if (!apiKey) {
-            setIsModalOpen(true);
-        } else {
-             try {
-                const storedHabits = localStorage.getItem('aura-habits');
-                if (storedHabits) {
-                    setHabits(JSON.parse(storedHabits));
-                } else {
-                    setHabits(getDefaultHabits());
-                }
-                setHabitNotes(localStorage.getItem('aura-habit-notes') || '');
-                setMonthlyReflection(localStorage.getItem('aura-monthly-reflection') || '');
-            } catch (error) {
-                console.error("Failed to parse from localStorage", error);
-                setHabits(getDefaultHabits());
+        try {
+            const storedHabits = localStorage.getItem('aura-monthly-habits');
+            const allHabits = storedHabits ? JSON.parse(storedHabits) : {};
+            
+            const currentMonthKey = getMonthKey(new Date());
+            if (!allHabits[currentMonthKey]) {
+                allHabits[currentMonthKey] = getDefaultHabits();
             }
+
+            setMonthlyHabits(allHabits);
+            setHabitNotes(localStorage.getItem('aura-habit-notes') || '');
+            setMonthlyReflection(localStorage.getItem('aura-monthly-reflection') || '');
+        } catch (error) {
+            console.error("Failed to parse from localStorage", error);
+            const currentMonthKey = getMonthKey(new Date());
+            setMonthlyHabits({ [currentMonthKey]: getDefaultHabits() });
         }
-    }, [apiKey]);
+    }, []);
     
     useEffect(() => {
-        if (apiKey) {
-            localStorage.setItem('aura-habits', JSON.stringify(habits));
+        if (Object.keys(monthlyHabits).length > 0) {
+            localStorage.setItem('aura-monthly-habits', JSON.stringify(monthlyHabits));
         }
-    }, [habits, apiKey]);
+    }, [monthlyHabits]);
 
     useEffect(() => {
-        if (apiKey) {
-            localStorage.setItem('aura-habit-notes', habitNotes);
-        }
-    }, [habitNotes, apiKey]);
+        localStorage.setItem('aura-habit-notes', habitNotes);
+    }, [habitNotes]);
     
     useEffect(() => {
-        if (apiKey) {
-            localStorage.setItem('aura-monthly-reflection', monthlyReflection);
-        }
-    }, [monthlyReflection, apiKey]);
-    
+        localStorage.setItem('aura-monthly-reflection', monthlyReflection);
+    }, [monthlyReflection]);
 
-    const handleSaveApiKey = (key: string) => {
-        localStorage.setItem('gemini-api-key', key);
-        setApiKey(key);
-        setIsModalOpen(false);
+    const handleMonthChange = (date: Date) => {
+        const monthKey = getMonthKey(date);
+        if (!monthlyHabits[monthKey]) {
+            const newHabits: Habit[] = Array.from({ length: 3 }).map((_, index) => ({
+                id: Date.now() + index,
+                name: "",
+                completions: {}
+            }));
+            setMonthlyHabits(prev => ({ ...prev, [monthKey]: newHabits }));
+        }
+        setCurrentMonthDate(date);
     };
 
     const handleToggleHabit = (habitId: number, date: string) => {
-        setHabits(prevHabits => 
-            prevHabits.map(habit => {
+        const monthKey = getMonthKey(currentMonthDate);
+        setMonthlyHabits(prevMonthlyHabits => {
+            const habitsForMonth = prevMonthlyHabits[monthKey] || [];
+            const updatedHabits = habitsForMonth.map(habit => {
                 if (habit.id === habitId) {
                     const newCompletions = { ...habit.completions };
                     if (newCompletions[date]) {
@@ -295,74 +219,24 @@ export default function App() {
                     return { ...habit, completions: newCompletions };
                 }
                 return habit;
-            })
-        );
+            });
+            return { ...prevMonthlyHabits, [monthKey]: updatedHabits };
+        });
     };
 
     const handleUpdateHabitName = (habitId: number, newName: string) => {
-        setHabits(prevHabits => 
-            prevHabits.map(habit => habit.id === habitId ? { ...habit, name: newName } : habit)
-        );
+        const monthKey = getMonthKey(currentMonthDate);
+        setMonthlyHabits(prevMonthlyHabits => {
+            const habitsForMonth = prevMonthlyHabits[monthKey] || [];
+            const updatedHabits = habitsForMonth.map(habit => 
+                habit.id === habitId ? { ...habit, name: newName } : habit
+            );
+            return { ...prevMonthlyHabits, [monthKey]: updatedHabits };
+        });
     };
-
-    const handleAICommand = useCallback(async (command: string) => {
-        if (!apiKey) {
-            setAiResponse("Please set your API key first.");
-            setIsModalOpen(true);
-            return;
-        }
-        setLoading(true);
-        setAiResponse(`Aura is thinking...`);
-        
-        const result = await processUserCommand(command, habits, habitNotes, monthlyReflection, apiKey);
-
-        if (result.functionCall) {
-            const { name, args } = result.functionCall;
-            switch(name) {
-                case 'add_habit':
-                     setHabits(prev => {
-                        if (prev.length >= 3) {
-                            setAiResponse("You can only track 3 habits at a time.");
-                            return prev;
-                        }
-                        const newHabit = { id: Date.now(), name: args.name, completions: {} };
-                        return [...prev, newHabit];
-                    });
-                    setAiResponse(`New habit added: "${args.name}"`);
-                    break;
-                case 'log_habit_completion':
-                    const dateToLog = args.date || new Date().toISOString().split('T')[0];
-                    let habitLogged = false;
-                    setHabits(prev => prev.map(h => {
-                        if (h.name.toLowerCase() === args.name.toLowerCase()) {
-                            habitLogged = true;
-                            return { ...h, completions: { ...h.completions, [dateToLog]: true } };
-                        }
-                        return h;
-                    }));
-                    setAiResponse(habitLogged ? `Logged "${args.name}" for ${dateToLog}` : `Couldn't find the habit "${args.name}"`);
-                    break;
-                case 'add_habit_note':
-                    setHabitNotes(prev => prev ? `${prev}\n- ${args.note}` : `- ${args.note}`);
-                    setAiResponse(`Note added to habits section.`);
-                    break;
-                case 'set_monthly_reflection':
-                    setMonthlyReflection(args.reflection);
-                    setAiResponse(`Monthly reflection has been set.`);
-                    break;
-                default:
-                    setAiResponse(`Sorry, I don't know how to do that.`);
-            }
-        } else {
-            setAiResponse(result.responseText);
-        }
-
-        setLoading(false);
-    }, [apiKey, habits, habitNotes, monthlyReflection]);
     
-    if (isModalOpen) {
-        return <ApiKeyModal onSave={handleSaveApiKey} />;
-    }
+    const currentMonthKey = getMonthKey(currentMonthDate);
+    const habitsForCurrentMonth = monthlyHabits[currentMonthKey] || [];
 
     return (
         <div className="flex flex-col h-screen font-sans bg-brand-beige">
@@ -370,20 +244,19 @@ export default function App() {
                 <LogoIcon className="w-8 h-8" />
                 <h1 className="ml-3 text-2xl font-bold tracking-wide">Aura</h1>
             </header>
-            <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-32">
+            <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
                  <HabitTracker 
-                      habits={habits} 
+                      habits={habitsForCurrentMonth} 
                       onToggleHabit={handleToggleHabit} 
                       onUpdateHabitName={handleUpdateHabitName}
                       currentMonthDate={currentMonthDate}
-                      onMonthChange={setCurrentMonthDate}
+                      onMonthChange={handleMonthChange}
                       habitNotes={habitNotes}
                       setHabitNotes={setHabitNotes}
                       monthlyReflection={monthlyReflection}
                       setMonthlyReflection={setMonthlyReflection}
                     />
             </main>
-            <AIAssistant onCommand={handleAICommand} loading={loading} aiResponse={aiResponse} />
         </div>
     );
 }
